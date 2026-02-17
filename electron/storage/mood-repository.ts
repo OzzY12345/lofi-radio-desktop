@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import Store from "electron-store";
-import type { Mood, MoodDraft, MoodUpdate } from "@shared/types/mood";
-import type { MoodsExportPayload } from "@shared/types/ipc";
-import { normalizeMood, normalizeMoodDraft, normalizeMoodPatch } from "@shared/utils/validation";
+import type { Mood, MoodDraft, MoodUpdate } from "../../shared/types/mood";
+import type { MoodsExportPayload } from "../../shared/types/ipc";
+import { normalizeMood, normalizeMoodDraft, normalizeMoodPatch } from "../../shared/utils/validation";
 import { createDefaultMoods } from "./default-moods";
 
 interface MoodStoreShape {
@@ -17,7 +17,7 @@ export class MoodRepository {
 
   constructor() {
     this.store = new Store<MoodStoreShape>({
-      name: "aurafi",
+      name: "aega-radio",
       defaults: {
         moods: [],
         meta: {
@@ -31,12 +31,14 @@ export class MoodRepository {
 
   private ensureDefaults(): void {
     const meta = this.store.get("meta");
-    const moods = this.store.get("moods");
+    const defaults = createDefaultMoods();
 
-    if (!meta.defaultsInitialized || moods.length === 0) {
-      this.store.set("moods", createDefaultMoods());
+    if (!meta.defaultsInitialized) {
+      this.store.set("moods", defaults);
       this.store.set("meta.defaultsInitialized", true);
+      return;
     }
+    this.store.set("moods", defaults);
   }
 
   private write(moods: Mood[]): Mood[] {

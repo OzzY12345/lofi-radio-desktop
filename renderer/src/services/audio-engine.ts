@@ -1,5 +1,6 @@
 import type { AudioEngineState } from "@shared/types/audio";
 import type { AudioSource, AudioSourceProvider } from "@shared/types/source";
+import { SoundCloudWidgetController } from "./soundcloud-widget-controller";
 
 type StateListener = (state: AudioEngineState) => void;
 
@@ -36,11 +37,15 @@ export class AudioEngine {
   private readonly provider: AudioSourceProvider;
   private readonly fadeDurationMs: number;
   private readonly listeners = new Set<StateListener>();
+  private readonly soundCloud = new SoundCloudWidgetController();
   private fadeToken = 0;
+  private embedVolume = 0;
 
   private state: AudioEngineState = {
     status: "idle",
     availableSources: [],
+    currentTrackIndex: undefined,
+    queueLength: undefined,
     volume: 0.6,
     error: undefined
   };
@@ -55,13 +60,21 @@ export class AudioEngine {
     this.audio.loop = true;
     this.audio.preload = "none";
     this.audio.volume = this.targetVolume;
+    this.embedVolume = this.targetVolume;
 
     this.audio.addEventListener("error", () => {
+      if (this.state.currentSource?.kind === "embed") {
+        return;
+      }
       this.setState({ status: "error", error: "Source unavailable" });
     });
 
     this.audio.addEventListener("ended", () => {
       this.setState({ status: "paused" });
+    });
+
+    this.soundCloud.onFinish(() => {
+      void this.handleEmbedFinish();
     });
   }
 
@@ -87,9 +100,18 @@ export class AudioEngine {
     this.setState({ status: "loading", error: undefined });
 
     try {
+      if (this.state.currentSource.kind === "embed") {
+        await this.soundCloud.setVolume(0);
+        this.embedVolume = 0;
+        await this.soundCloud.play();
+        await this.fadeEmbedTo(this.targetVolume);
+        this.setState({ status: "playing", error: undefined });
+        return;
+      }
+
       this.audio.volume = 0;
       await this.audio.play();
-      await this.fadeTo(this.targetVolume);
+      await this.fadeHtmlTo(this.targetVolume);
       this.setState({ status: "playing", error: undefined });
     } catch {
       this.setState({ status: "error", error: "Source unavailable" });
@@ -101,7 +123,16 @@ export class AudioEngine {
       return;
     }
 
-    await this.fadeTo(0);
+    if (this.state.currentSource?.kind === "embed") {
+      await this.fadeEmbedTo(0);
+      await this.soundCloud.pause();
+      await this.soundCloud.setVolume(this.targetVolume);
+      this.embedVolume = this.targetVolume;
+      this.setState({ status: "paused" });
+      return;
+    }
+
+    await this.fadeHtmlTo(0);
     this.audio.pause();
     this.audio.volume = this.targetVolume;
     this.setState({ status: "paused" });
@@ -109,15 +140,24 @@ export class AudioEngine {
 
   stop(): void {
     this.fadeToken += 1;
-    this.audio.pause();
-    this.audio.currentTime = 0;
-    this.audio.volume = this.targetVolume;
+    if (this.state.currentSource?.kind === "embed") {
+      void this.soundCloud.pause();
+      void this.soundCloud.setVolume(this.targetVolume);
+      this.embedVolume = this.targetVolume;
+    } else {
+      this.audio.pause();
+      this.audio.currentTime = 0;
+      this.audio.volume = this.targetVolume;
+    }
     this.setState({ status: "idle", error: undefined });
   }
 
   setVolume(value: number): void {
     this.targetVolume = clamp01(value);
-    if (this.state.status === "playing") {
+    if (this.state.status === "playing" && this.state.currentSource?.kind === "embed") {
+      this.embedVolume = this.targetVolume;
+      void this.soundCloud.setVolume(this.targetVolume);
+    } else if (this.state.status === "playing") {
       this.audio.volume = this.targetVolume;
     }
     this.setState({ volume: this.targetVolume });
@@ -127,8 +167,7 @@ export class AudioEngine {
     const wasPlaying = this.state.status === "playing";
 
     if (wasPlaying) {
-      await this.fadeTo(0);
-      this.audio.pause();
+      await this.pauseCurrentForTransition();
     }
 
     this.setState({ status: "loading", currentMoodId: moodId, error: undefined });
@@ -144,11 +183,14 @@ export class AudioEngine {
         : undefined;
 
       const source = preferredSource ?? sources[0];
+      const sourceIndex = Math.max(0, sources.findIndex((item) => item.id === source.id));
 
       await this.bindSource(source, false);
       this.setState({
         availableSources: sources,
         currentSource: source,
+        currentTrackIndex: source.kind === "embed" ? sourceIndex : undefined,
+        queueLength: source.kind === "embed" ? sources.length : undefined,
         status: "paused",
         error: undefined
       });
@@ -160,6 +202,8 @@ export class AudioEngine {
       this.setState({
         availableSources: [],
         currentSource: undefined,
+        currentTrackIndex: undefined,
+        queueLength: undefined,
         status: "error",
         error: "Source unavailable"
       });
@@ -168,15 +212,24 @@ export class AudioEngine {
 
   async setSource(source: AudioSource): Promise<void> {
     const wasPlaying = this.state.status === "playing";
+    const sourceIndex = Math.max(
+      0,
+      this.state.availableSources.findIndex((item) => item.id === source.id)
+    );
 
     if (wasPlaying) {
-      await this.fadeTo(0);
-      this.audio.pause();
+      await this.pauseCurrentForTransition();
     }
 
     try {
       await this.bindSource(source, false);
-      this.setState({ currentSource: source, error: undefined, status: "paused" });
+      this.setState({
+        currentSource: source,
+        currentTrackIndex: source.kind === "embed" ? sourceIndex : undefined,
+        queueLength: source.kind === "embed" ? this.state.availableSources.length : undefined,
+        error: undefined,
+        status: "paused"
+      });
 
       if (wasPlaying) {
         await this.play();
@@ -204,7 +257,48 @@ export class AudioEngine {
     }
   }
 
+  async nextSourceInQueue(): Promise<void> {
+    if (this.state.currentSource?.kind !== "embed" || this.state.availableSources.length === 0) {
+      return;
+    }
+
+    const currentIndex =
+      this.state.currentTrackIndex ??
+      this.state.availableSources.findIndex((item) => item.id === this.state.currentSource?.id);
+    const nextIndex = (Math.max(0, currentIndex) + 1) % this.state.availableSources.length;
+    await this.setSource(this.state.availableSources[nextIndex]);
+  }
+
+  async prevSourceInQueue(): Promise<void> {
+    if (this.state.currentSource?.kind !== "embed" || this.state.availableSources.length === 0) {
+      return;
+    }
+
+    const currentIndex =
+      this.state.currentTrackIndex ??
+      this.state.availableSources.findIndex((item) => item.id === this.state.currentSource?.id);
+    const prevIndex =
+      (Math.max(0, currentIndex) - 1 + this.state.availableSources.length) %
+      this.state.availableSources.length;
+    await this.setSource(this.state.availableSources[prevIndex]);
+  }
+
   private async bindSource(source: AudioSource, autoPlay: boolean): Promise<void> {
+    if (source.kind === "embed") {
+      this.audio.pause();
+      this.audio.currentTime = 0;
+      this.audio.src = "";
+      await this.soundCloud.loadTrack(source.uri);
+      await this.soundCloud.setVolume(0);
+      this.embedVolume = 0;
+
+      if (autoPlay) {
+        await this.play();
+      }
+      return;
+    }
+
+    await this.soundCloud.pause();
     this.audio.src = source.uri;
     this.audio.currentTime = 0;
 
@@ -215,6 +309,20 @@ export class AudioEngine {
     if (autoPlay) {
       await this.play();
     }
+  }
+
+  private async pauseCurrentForTransition(): Promise<void> {
+    if (this.state.currentSource?.kind === "embed") {
+      await this.fadeEmbedTo(0);
+      await this.soundCloud.pause();
+      await this.soundCloud.setVolume(this.targetVolume);
+      this.embedVolume = this.targetVolume;
+      return;
+    }
+
+    await this.fadeHtmlTo(0);
+    this.audio.pause();
+    this.audio.volume = this.targetVolume;
   }
 
   private setState(next: Partial<AudioEngineState>): void {
@@ -228,7 +336,7 @@ export class AudioEngine {
     }
   }
 
-  private fadeTo(targetVolume: number): Promise<void> {
+  private fadeHtmlTo(targetVolume: number): Promise<void> {
     const token = ++this.fadeToken;
     const start = this.audio.volume;
     const end = clamp01(targetVolume);
@@ -262,5 +370,51 @@ export class AudioEngine {
 
       requestAnimationFrame(tick);
     });
+  }
+
+  private fadeEmbedTo(targetVolume: number): Promise<void> {
+    const token = ++this.fadeToken;
+    const start = this.embedVolume;
+    const end = clamp01(targetVolume);
+
+    if (Math.abs(start - end) < 0.001) {
+      this.embedVolume = end;
+      void this.soundCloud.setVolume(end);
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      const startedAt = performance.now();
+
+      const tick = (now: number) => {
+        if (token !== this.fadeToken) {
+          resolve();
+          return;
+        }
+
+        const elapsed = now - startedAt;
+        const progress = Math.min(1, elapsed / this.fadeDurationMs);
+        const next = start + (end - start) * progress;
+        this.embedVolume = clamp01(next);
+        void this.soundCloud.setVolume(this.embedVolume);
+
+        if (progress >= 1) {
+          resolve();
+          return;
+        }
+
+        requestAnimationFrame(tick);
+      };
+
+      requestAnimationFrame(tick);
+    });
+  }
+
+  private async handleEmbedFinish(): Promise<void> {
+    if (this.state.currentSource?.kind !== "embed" || this.state.availableSources.length === 0) {
+      return;
+    }
+
+    await this.nextSourceInQueue();
   }
 }

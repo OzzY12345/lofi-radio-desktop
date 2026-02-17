@@ -1,7 +1,8 @@
 import { app, BrowserWindow, globalShortcut, Menu, Tray, nativeImage } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { TransportCommand, TransportPayload } from "@shared/types/ipc";
+import type { TransportPayload } from "../shared/types/audio";
+import type { TransportCommand } from "../shared/types/ipc";
 import { registerIpcHandlers } from "./ipc/handlers";
 import { MoodRepository } from "./storage/mood-repository";
 import { SettingsRepository } from "./storage/settings-repository";
@@ -32,7 +33,7 @@ const sendTransportCommand = (command: TransportCommand): void => {
 
 const getTrayIcon = (): Electron.NativeImage => {
   const iconPath = app.isPackaged
-    ? path.join(process.resourcesPath, "build", "icon.ico")
+    ? path.join(process.resourcesPath, "app.asar", "build", "icon.ico")
     : path.join(process.cwd(), "build", "icon.ico");
 
   const icon = nativeImage.createFromPath(iconPath);
@@ -82,8 +83,8 @@ const updateTrayMenu = (): void => {
 
   tray.setToolTip(
     playbackState.moodTitle
-      ? `AuraFi - ${playbackState.moodTitle}${playbackState.isPlaying ? " (Playing)" : " (Paused)"}`
-      : "AuraFi"
+      ? `AEGA Radio - ${playbackState.moodTitle}${playbackState.isPlaying ? " (Playing)" : " (Paused)"}`
+      : "AEGA Radio"
   );
   tray.setContextMenu(menu);
 };
@@ -118,13 +119,13 @@ const createWindow = (): void => {
   const preload = path.join(__dirname, "preload.js");
 
   mainWindow = new BrowserWindow({
-    width: 380,
-    height: 520,
-    minWidth: 360,
-    minHeight: 480,
+    width: 440,
+    height: 760,
+    minWidth: 420,
+    minHeight: 700,
     autoHideMenuBar: true,
     show: false,
-    title: "AuraFi",
+    title: "AEGA Radio",
     webPreferences: {
       preload,
       contextIsolation: true,
@@ -162,13 +163,6 @@ const createWindow = (): void => {
       mainWindow?.webContents.closeDevTools();
     });
   }
-
-  mainWindow.webContents.on("ipc-message", (_event, channel, payload) => {
-    if (channel === "player:state-broadcast") {
-      playbackState = payload as TransportPayload;
-      updateTrayMenu();
-    }
-  });
 };
 
 const createTray = (): void => {
@@ -178,14 +172,18 @@ const createTray = (): void => {
 };
 
 const bootstrap = async (): Promise<void> => {
-  app.setAppUserModelId("com.local.aurafi");
+  app.setAppUserModelId("com.local.aegaradio");
 
   registerIpcHandlers({
     getWindow: () => mainWindow,
     settingsRepo,
     moodRepo,
     requestClose,
-    applyHotkeys
+    applyHotkeys,
+    onPlayerState: (payload) => {
+      playbackState = payload;
+      updateTrayMenu();
+    }
   });
 
   createWindow();

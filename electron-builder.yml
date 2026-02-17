@@ -1,5 +1,5 @@
-appId: com.local.aurafi
-productName: AuraFi
+appId: com.local.aegaradio
+productName: AEGA Radio
 directories:
   output: release
   buildResources: build
@@ -7,6 +7,7 @@ files:
   - dist/renderer/**/*
   - dist-electron/**/*
   - assets/audio/**/*
+  - build/icon.ico
   - package.json
 extraMetadata:
   main: dist-electron/main.js
@@ -21,4 +22,4 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: AuraFi
+  shortcutName: AEGA Radio

@@ -1,12 +1,12 @@
 import Store from "electron-store";
-import type { AppSettings } from "@shared/types/settings";
-import { normalizeSettings } from "@shared/utils/validation";
+import type { AppSettings } from "../../shared/types/settings";
+import { normalizeSettings } from "../../shared/utils/validation";
 
 const DEFAULT_SETTINGS: AppSettings = {
   volume: 0.6,
   rememberLastMood: true,
   exitOnClose: false,
-  enableGlobalHotkeys: true,
+  enableGlobalHotkeys: false,
   autoplay: false
 };
 
@@ -15,7 +15,7 @@ export class SettingsRepository {
 
   constructor() {
     this.store = new Store<{ settings: AppSettings }>({
-      name: "aurafi",
+      name: "aega-radio",
       defaults: {
         settings: DEFAULT_SETTINGS
       }
@@ -28,10 +28,6 @@ export class SettingsRepository {
 
   set(partial: Partial<AppSettings>): AppSettings {
     const next = normalizeSettings({ ...this.get(), ...partial });
-
-    if (!next.rememberLastMood) {
-      next.lastMoodId = undefined;
-    }
 
     this.store.set("settings", next);
     return next;

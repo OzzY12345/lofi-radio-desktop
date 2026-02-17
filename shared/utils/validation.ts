@@ -1,6 +1,6 @@
-import { MOOD_COLOR_ACCENTS, type MoodColorAccent } from "@shared/constants/color-accents";
-import type { Mood, MoodDraft, MoodUpdate } from "@shared/types/mood";
-import type { AppSettings } from "@shared/types/settings";
+import { MOOD_COLOR_ACCENTS, type MoodColorAccent } from "../constants/color-accents";
+import type { Mood, MoodDraft, MoodUpdate } from "../types/mood";
+import type { AppSettings } from "../types/settings";
 
 export const clamp01 = (value: number): number => {
   if (Number.isNaN(value)) {
@@ -35,13 +35,31 @@ export const normalizeAccent = (accent?: string): MoodColorAccent | undefined =>
   return undefined;
 };
 
+const normalizeIcon = (icon?: string): string | undefined => {
+  if (!icon) {
+    return undefined;
+  }
+
+  const trimmed = icon.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  // Cleanup legacy broken values like "?", "??", "???" from previous encoding issues.
+  if (/^\?+$/.test(trimmed)) {
+    return undefined;
+  }
+
+  return trimmed;
+};
+
 export const normalizeMoodDraft = (draft: MoodDraft): MoodDraft => {
   return {
     title: draft.title.trim() || "Untitled",
     subtitle: draft.subtitle.trim(),
     energyLevel: clamp01(Number(draft.energyLevel ?? 0.5)),
     tags: normalizeTags(draft.tags),
-    icon: draft.icon?.trim() || undefined,
+    icon: normalizeIcon(draft.icon),
     colorAccent: normalizeAccent(draft.colorAccent)
   };
 };
@@ -66,7 +84,7 @@ export const normalizeMoodPatch = (patch: MoodUpdate): MoodUpdate => {
   }
 
   if (typeof patch.icon === "string") {
-    next.icon = patch.icon.trim() || undefined;
+    next.icon = normalizeIcon(patch.icon);
   }
 
   if (typeof patch.colorAccent !== "undefined") {
@@ -83,7 +101,7 @@ export const normalizeMood = (mood: Mood, order: number): Mood => {
     subtitle: (mood.subtitle ?? "").trim(),
     energyLevel: clamp01(Number(mood.energyLevel ?? 0.5)),
     tags: normalizeTags(mood.tags ?? []),
-    icon: mood.icon?.trim() || undefined,
+    icon: normalizeIcon(mood.icon),
     colorAccent: normalizeAccent(mood.colorAccent),
     order
   };
@@ -92,10 +110,10 @@ export const normalizeMood = (mood: Mood, order: number): Mood => {
 export const normalizeSettings = (settings: AppSettings): AppSettings => {
   return {
     volume: clamp01(Number(settings.volume ?? 0.6)),
-    rememberLastMood: Boolean(settings.rememberLastMood),
-    exitOnClose: Boolean(settings.exitOnClose),
-    enableGlobalHotkeys: Boolean(settings.enableGlobalHotkeys),
-    autoplay: Boolean(settings.autoplay),
+    rememberLastMood: true,
+    exitOnClose: false,
+    enableGlobalHotkeys: false,
+    autoplay: false,
     lastMoodId: settings.lastMoodId
   };
 };

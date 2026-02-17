@@ -1,11 +1,11 @@
 {
-  "name": "aurafi",
+  "name": "aega-radio",
   "version": "0.1.0",
-  "description": "Minimal AuraFi-like mood music desktop app",
+  "description": "Minimal personal internet radio desktop app",
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 dist-electron/main.js && node scripts/run-electron-dev.cjs\"",
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && vite build && electron-builder --win nsis",
     "dist:win": "npm run build"

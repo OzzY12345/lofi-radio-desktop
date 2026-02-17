@@ -1,4 +1,4 @@
-import type { AudioSource } from "@shared/types/source";
+import type { AudioSource } from "./source";
 
 export type AudioEngineStatus = "idle" | "loading" | "playing" | "paused" | "error";
 
@@ -7,6 +7,8 @@ export interface AudioEngineState {
   currentMoodId?: string;
   currentSource?: AudioSource;
   availableSources: AudioSource[];
+  currentTrackIndex?: number;
+  queueLength?: number;
   volume: number;
   error?: string;
 }

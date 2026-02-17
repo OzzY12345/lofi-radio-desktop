@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AuraBridge, TransportCommand } from "@shared/types/ipc";
-import type { TransportPayload } from "@shared/types/audio";
+import type { AuraBridge, TransportCommand } from "../shared/types/ipc";
+import type { TransportPayload } from "../shared/types/audio";
 
 const api: AuraBridge = {
   player: {

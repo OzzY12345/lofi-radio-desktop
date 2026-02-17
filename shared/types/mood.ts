@@ -1,4 +1,4 @@
-import type { MoodColorAccent } from "@shared/constants/color-accents";
+import type { MoodColorAccent } from "../constants/color-accents";
 
 export interface Mood {
   id: string;

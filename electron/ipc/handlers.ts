@@ -1,7 +1,7 @@
 import { app, dialog, ipcMain, type BrowserWindow } from "electron";
 import fs from "node:fs/promises";
-import type { TransportPayload } from "@shared/types/audio";
-import type { MoodDraft, MoodUpdate } from "@shared/types/mood";
+import type { TransportPayload } from "../../shared/types/audio";
+import type { MoodDraft, MoodUpdate } from "../../shared/types/mood";
 import { MoodRepository } from "../storage/mood-repository";
 import { SettingsRepository } from "../storage/settings-repository";
 
@@ -11,6 +11,7 @@ interface HandlerDeps {
   moodRepo: MoodRepository;
   requestClose: () => void;
   applyHotkeys: () => void;
+  onPlayerState: (payload: TransportPayload) => void;
 }
 
 export const registerIpcHandlers = ({
@@ -18,7 +19,8 @@ export const registerIpcHandlers = ({
   settingsRepo,
   moodRepo,
   requestClose,
-  applyHotkeys
+  applyHotkeys,
+  onPlayerState
 }: HandlerDeps): void => {
   ipcMain.handle("settings:get", () => settingsRepo.get());
 
@@ -111,11 +113,7 @@ export const registerIpcHandlers = ({
   });
 
   ipcMain.on("player:state-changed", (_event, payload: TransportPayload) => {
-    const win = getWindow();
-    if (!win) {
-      return;
-    }
-    win.webContents.send("player:state-broadcast", payload);
+    onPlayerState(payload);
   });
 
   app.on("before-quit", () => {

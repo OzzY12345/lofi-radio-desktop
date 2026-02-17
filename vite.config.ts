@@ -20,10 +20,25 @@ export default defineConfig({
     react(),
     electron({
       main: {
-        entry: "electron/main.ts"
+        entry: path.resolve(__dirname, "electron/main.ts"),
+        onstart() {
+          // Electron is started by npm script after dist-electron/main.js becomes available.
+        },
+        vite: {
+          build: {
+            outDir: path.resolve(__dirname, "dist-electron"),
+            emptyOutDir: false
+          }
+        }
       },
       preload: {
-        input: path.join(__dirname, "electron/preload.ts")
+        input: path.resolve(__dirname, "electron/preload.ts"),
+        vite: {
+          build: {
+            outDir: path.resolve(__dirname, "dist-electron"),
+            emptyOutDir: false
+          }
+        }
       }
     })
   ]

@@ -1,6 +1,6 @@
-import type { Mood } from "@shared/types/mood";
-import type { AppSettings } from "@shared/types/settings";
-import type { TransportPayload } from "@shared/types/audio";
+import type { Mood } from "./mood";
+import type { AppSettings } from "./settings";
+import type { TransportPayload } from "./audio";
 
 export type TransportCommand = "play-pause" | "next-mood" | "prev-mood" | "open-window";
 

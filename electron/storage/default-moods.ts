@@ -46,6 +46,33 @@ const SEED_MOODS: SeedMood[] = [
     tags: ["focus", "flow", "work"],
     icon: "\uD83C\uDF19",
     colorAccent: "teal"
+  },
+  {
+    id: "sad",
+    title: "Sad",
+    subtitle: "Melancholic mood",
+    energyLevel: 0.2,
+    tags: ["sad", "melancholy", "slow"],
+    icon: "\uD83D\uDE14",
+    colorAccent: "rose"
+  },
+  {
+    id: "deep-house",
+    title: "Deep House",
+    subtitle: "Hypnotic groove",
+    energyLevel: 0.7,
+    tags: ["house", "deep", "club"],
+    icon: "\uD83C\uDFB5",
+    colorAccent: "violet"
+  },
+  {
+    id: "liquid-dnb",
+    title: "Liquid DnB",
+    subtitle: "Atmospheric jungle flow",
+    energyLevel: 0.78,
+    tags: ["liquid", "dnb", "jungle"],
+    icon: "\uD83C\uDFB6",
+    colorAccent: "teal"
   }
 ];
 

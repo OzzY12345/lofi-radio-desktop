@@ -1,12 +1,20 @@
 import type { AudioEngineState } from "@shared/types/audio";
 import type { AudioSource, AudioSourceProvider } from "@shared/types/source";
 import { SoundCloudWidgetController } from "./soundcloud-widget-controller";
+import { YouTubeWidgetController } from "./youtube-widget-controller";
 
 type StateListener = (state: AudioEngineState) => void;
 
 const clamp01 = (value: number): number => {
   if (Number.isNaN(value)) return 0;
   return Math.max(0, Math.min(1, value));
+};
+
+const toErrorMessage = (error: unknown): string => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return "Source unavailable";
 };
 
 const waitForPlaybackReady = (audio: HTMLAudioElement): Promise<void> => {
@@ -38,6 +46,7 @@ export class AudioEngine {
   private readonly fadeDurationMs: number;
   private readonly listeners = new Set<StateListener>();
   private readonly soundCloud = new SoundCloudWidgetController();
+  private readonly youTube = new YouTubeWidgetController();
   private fadeToken = 0;
   private embedVolume = 0;
 
@@ -51,6 +60,7 @@ export class AudioEngine {
   };
 
   private targetVolume = 0.6;
+  private readonly sadBoostMultiplier = 2;
 
   constructor(provider: AudioSourceProvider, initialVolume = 0.6, fadeDurationMs = 700) {
     this.provider = provider;
@@ -75,6 +85,13 @@ export class AudioEngine {
 
     this.soundCloud.onFinish(() => {
       void this.handleEmbedFinish();
+    });
+
+    this.youTube.onFinish(() => {
+      void this.handleEmbedFinish();
+    });
+    this.youTube.onError((error) => {
+      this.setState({ status: "error", error: toErrorMessage(error) });
     });
   }
 
@@ -101,9 +118,9 @@ export class AudioEngine {
 
     try {
       if (this.state.currentSource.kind === "embed") {
-        await this.soundCloud.setVolume(0);
+        void this.setActiveEmbedVolume(0);
         this.embedVolume = 0;
-        await this.soundCloud.play();
+        await this.playActiveEmbed();
         await this.fadeEmbedTo(this.targetVolume);
         this.setState({ status: "playing", error: undefined });
         return;
@@ -111,10 +128,10 @@ export class AudioEngine {
 
       this.audio.volume = 0;
       await this.audio.play();
-      await this.fadeHtmlTo(this.targetVolume);
+      await this.fadeHtmlTo(this.getEffectiveHtmlTargetVolume());
       this.setState({ status: "playing", error: undefined });
-    } catch {
-      this.setState({ status: "error", error: "Source unavailable" });
+    } catch (error) {
+      this.setState({ status: "error", error: toErrorMessage(error) });
     }
   }
 
@@ -125,8 +142,8 @@ export class AudioEngine {
 
     if (this.state.currentSource?.kind === "embed") {
       await this.fadeEmbedTo(0);
-      await this.soundCloud.pause();
-      await this.soundCloud.setVolume(this.targetVolume);
+      await this.pauseAllEmbeds();
+      await this.setActiveEmbedVolume(this.targetVolume);
       this.embedVolume = this.targetVolume;
       this.setState({ status: "paused" });
       return;
@@ -134,20 +151,20 @@ export class AudioEngine {
 
     await this.fadeHtmlTo(0);
     this.audio.pause();
-    this.audio.volume = this.targetVolume;
+    this.audio.volume = this.getEffectiveHtmlTargetVolume();
     this.setState({ status: "paused" });
   }
 
   stop(): void {
     this.fadeToken += 1;
     if (this.state.currentSource?.kind === "embed") {
-      void this.soundCloud.pause();
-      void this.soundCloud.setVolume(this.targetVolume);
+      void this.pauseAllEmbeds();
+      void this.setActiveEmbedVolume(this.targetVolume);
       this.embedVolume = this.targetVolume;
     } else {
       this.audio.pause();
       this.audio.currentTime = 0;
-      this.audio.volume = this.targetVolume;
+      this.audio.volume = this.getEffectiveHtmlTargetVolume();
     }
     this.setState({ status: "idle", error: undefined });
   }
@@ -156,9 +173,9 @@ export class AudioEngine {
     this.targetVolume = clamp01(value);
     if (this.state.status === "playing" && this.state.currentSource?.kind === "embed") {
       this.embedVolume = this.targetVolume;
-      void this.soundCloud.setVolume(this.targetVolume);
+      void this.setActiveEmbedVolume(this.targetVolume);
     } else if (this.state.status === "playing") {
-      this.audio.volume = this.targetVolume;
+      this.audio.volume = this.getEffectiveHtmlTargetVolume();
     }
     this.setState({ volume: this.targetVolume });
   }
@@ -189,8 +206,8 @@ export class AudioEngine {
       this.setState({
         availableSources: sources,
         currentSource: source,
-        currentTrackIndex: source.kind === "embed" ? sourceIndex : undefined,
-        queueLength: source.kind === "embed" ? sources.length : undefined,
+        currentTrackIndex: source.kind === "stream" ? undefined : sourceIndex,
+        queueLength: source.kind === "stream" ? undefined : sources.length,
         status: "paused",
         error: undefined
       });
@@ -198,14 +215,14 @@ export class AudioEngine {
       if (wasPlaying) {
         await this.play();
       }
-    } catch {
+    } catch (error) {
       this.setState({
         availableSources: [],
         currentSource: undefined,
         currentTrackIndex: undefined,
         queueLength: undefined,
         status: "error",
-        error: "Source unavailable"
+        error: toErrorMessage(error)
       });
     }
   }
@@ -225,8 +242,8 @@ export class AudioEngine {
       await this.bindSource(source, false);
       this.setState({
         currentSource: source,
-        currentTrackIndex: source.kind === "embed" ? sourceIndex : undefined,
-        queueLength: source.kind === "embed" ? this.state.availableSources.length : undefined,
+        currentTrackIndex: source.kind === "stream" ? undefined : sourceIndex,
+        queueLength: source.kind === "stream" ? undefined : this.state.availableSources.length,
         error: undefined,
         status: "paused"
       });
@@ -234,8 +251,8 @@ export class AudioEngine {
       if (wasPlaying) {
         await this.play();
       }
-    } catch {
-      this.setState({ status: "error", error: "Source unavailable" });
+    } catch (error) {
+      this.setState({ status: "error", error: toErrorMessage(error) });
     }
   }
 
@@ -258,7 +275,7 @@ export class AudioEngine {
   }
 
   async nextSourceInQueue(): Promise<void> {
-    if (this.state.currentSource?.kind !== "embed" || this.state.availableSources.length === 0) {
+    if (!this.state.currentSource || this.state.currentSource.kind === "stream" || this.state.availableSources.length === 0) {
       return;
     }
 
@@ -270,7 +287,7 @@ export class AudioEngine {
   }
 
   async prevSourceInQueue(): Promise<void> {
-    if (this.state.currentSource?.kind !== "embed" || this.state.availableSources.length === 0) {
+    if (!this.state.currentSource || this.state.currentSource.kind === "stream" || this.state.availableSources.length === 0) {
       return;
     }
 
@@ -288,8 +305,20 @@ export class AudioEngine {
       this.audio.pause();
       this.audio.currentTime = 0;
       this.audio.src = "";
-      await this.soundCloud.loadTrack(source.uri);
-      await this.soundCloud.setVolume(0);
+      const embedKind = this.resolveEmbedKind(source.uri);
+      if (!embedKind) {
+        throw new Error("Source unavailable");
+      }
+
+      if (embedKind === "soundcloud") {
+        await this.youTube.pause();
+        await this.soundCloud.loadTrack(source.uri);
+      } else {
+        await this.soundCloud.pause();
+        await this.youTube.loadTrack(source.uri);
+      }
+
+      await this.setActiveEmbedVolume(0);
       this.embedVolume = 0;
 
       if (autoPlay) {
@@ -298,7 +327,7 @@ export class AudioEngine {
       return;
     }
 
-    await this.soundCloud.pause();
+    await this.pauseAllEmbeds();
     this.audio.src = source.uri;
     this.audio.currentTime = 0;
 
@@ -314,15 +343,15 @@ export class AudioEngine {
   private async pauseCurrentForTransition(): Promise<void> {
     if (this.state.currentSource?.kind === "embed") {
       await this.fadeEmbedTo(0);
-      await this.soundCloud.pause();
-      await this.soundCloud.setVolume(this.targetVolume);
+      await this.pauseAllEmbeds();
+      await this.setActiveEmbedVolume(this.targetVolume);
       this.embedVolume = this.targetVolume;
       return;
     }
 
     await this.fadeHtmlTo(0);
     this.audio.pause();
-    this.audio.volume = this.targetVolume;
+    this.audio.volume = this.getEffectiveHtmlTargetVolume();
   }
 
   private setState(next: Partial<AudioEngineState>): void {
@@ -379,7 +408,7 @@ export class AudioEngine {
 
     if (Math.abs(start - end) < 0.001) {
       this.embedVolume = end;
-      void this.soundCloud.setVolume(end);
+      void this.setActiveEmbedVolume(end);
       return Promise.resolve();
     }
 
@@ -396,7 +425,7 @@ export class AudioEngine {
         const progress = Math.min(1, elapsed / this.fadeDurationMs);
         const next = start + (end - start) * progress;
         this.embedVolume = clamp01(next);
-        void this.soundCloud.setVolume(this.embedVolume);
+        void this.setActiveEmbedVolume(this.embedVolume);
 
         if (progress >= 1) {
           resolve();
@@ -416,5 +445,52 @@ export class AudioEngine {
     }
 
     await this.nextSourceInQueue();
+  }
+
+  private resolveEmbedKind(uri: string): "soundcloud" | "youtube" | null {
+    const value = uri.toLowerCase();
+    if (value.includes("soundcloud.com")) {
+      return "soundcloud";
+    }
+    if (value.includes("youtube.com") || value.includes("youtu.be")) {
+      return "youtube";
+    }
+    return null;
+  }
+
+  private async playActiveEmbed(): Promise<void> {
+    const kind = this.state.currentSource?.uri ? this.resolveEmbedKind(this.state.currentSource.uri) : null;
+    if (!kind) {
+      throw new Error("Source unavailable");
+    }
+    if (kind === "soundcloud") {
+      await this.soundCloud.play();
+      return;
+    }
+    await this.youTube.play();
+  }
+
+  private async setActiveEmbedVolume(value: number): Promise<void> {
+    const kind = this.state.currentSource?.uri ? this.resolveEmbedKind(this.state.currentSource.uri) : null;
+    if (!kind) {
+      return;
+    }
+    if (kind === "soundcloud") {
+      await this.soundCloud.setVolume(value);
+      return;
+    }
+    await this.youTube.setVolume(value);
+  }
+
+  private async pauseAllEmbeds(): Promise<void> {
+    await Promise.all([this.soundCloud.pause(), this.youTube.pause()]);
+  }
+
+  private getEffectiveHtmlTargetVolume(): number {
+    const isSadLocal = this.state.currentMoodId === "sad" && this.state.currentSource?.kind === "local";
+    if (!isSadLocal) {
+      return this.targetVolume;
+    }
+    return clamp01(this.targetVolume * this.sadBoostMultiplier);
   }
 }

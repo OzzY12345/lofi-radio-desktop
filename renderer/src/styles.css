@@ -223,6 +223,13 @@ body,
   box-shadow: 2px 2px 0 #111;
 }
 
+.track-nav-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+  box-shadow: 3px 3px 0 #111;
+}
+
 .wave-wrap {
   border: 3px solid #111;
   border-radius: 12px;

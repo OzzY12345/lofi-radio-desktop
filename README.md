@@ -56,6 +56,7 @@ Artifacts:
 - `Exit on close = false` (default): app hides to tray
 - `Exit on close = true`: app quits
 - DevTools disabled in production
+- In production, renderer is served from a local `http://127.0.0.1:<port>` server (not `file://`) to improve embedded player compatibility (e.g. YouTube IFrame API).
 
 ## Mood Storage
 Data is stored in appData via `electron-store` with key groups:

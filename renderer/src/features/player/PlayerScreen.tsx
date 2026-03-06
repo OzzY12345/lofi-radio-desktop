@@ -15,6 +15,8 @@ interface PlayerScreenProps {
   onNextTrack: () => Promise<void>;
   onVolumeChange: (value: number) => Promise<void>;
   onRetry: () => Promise<void>;
+  canTrackNavigation: boolean;
+  canCycleTrack: boolean;
 }
 
 const statusTitle = (status: AudioEngineState["status"]): string => {
@@ -47,11 +49,12 @@ export function PlayerScreen({
   onPrevTrack,
   onNextTrack,
   onVolumeChange,
-  onRetry
+  onRetry,
+  canTrackNavigation,
+  canCycleTrack
 }: PlayerScreenProps): JSX.Element {
   const activeMood = moods.find((mood) => mood.id === activeMoodId);
   const isPlaying = engineState.status === "playing";
-  const isDeepFocus = activeMoodId === "focus";
   const stationLabel = engineState.currentSource?.label ?? "Station is loading...";
   const shouldAnimate = isMotionActive && isPlaying;
   const [visibleError, setVisibleError] = useState<string | undefined>(undefined);
@@ -110,16 +113,26 @@ export function PlayerScreen({
         </div>
 
         <div className="transport-row">
-          {isDeepFocus ? (
-            <button type="button" className="track-nav-button" onClick={() => void onPrevTrack()}>
+          {canTrackNavigation ? (
+            <button
+              type="button"
+              className="track-nav-button"
+              disabled={!canCycleTrack}
+              onClick={() => void onPrevTrack()}
+            >
               &larr;
             </button>
           ) : null}
           <button type="button" className="play-button" onClick={() => void onPlayPause()}>
             {isPlaying ? "PAUSE" : "PLAY"}
           </button>
-          {isDeepFocus ? (
-            <button type="button" className="track-nav-button" onClick={() => void onNextTrack()}>
+          {canTrackNavigation ? (
+            <button
+              type="button"
+              className="track-nav-button"
+              disabled={!canCycleTrack}
+              onClick={() => void onNextTrack()}
+            >
               &rarr;
             </button>
           ) : null}

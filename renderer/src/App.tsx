@@ -42,6 +42,9 @@ export default function App(): JSX.Element {
   const [isWindowActive, setIsWindowActive] = useState<boolean>(!document.hidden && document.hasFocus());
 
   const activeMood = moods.find((mood) => mood.id === activeMoodId);
+  const canTrackNavigation =
+    engineState.currentSource?.kind === "embed" || engineState.currentSource?.kind === "local";
+  const canCycleTrack = canTrackNavigation && (engineState.availableSources.length ?? 0) > 1;
 
   const persistLastMood = useCallback(
     async (moodId: string | undefined, baseSettings?: AppSettings) => {
@@ -270,6 +273,8 @@ export default function App(): JSX.Element {
         onNextTrack={handleNextTrack}
         onVolumeChange={handleVolumeChange}
         onRetry={handleRetry}
+        canTrackNavigation={canTrackNavigation}
+        canCycleTrack={canCycleTrack}
       />
     </main>
   );
